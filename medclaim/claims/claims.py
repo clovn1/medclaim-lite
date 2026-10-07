@@ -47,23 +47,13 @@ def void_claim(claim_id, reason=None):
 
 
 def void_claim_legacy(claim_id, reason=None):
-    # ORIGINAL void path (2018). Predates the is_deleted column, so it records the
-    # void in void_log and nowhere else. Still called from the old ERA-import and
-    # correction flows.
+    # ORIGINAL void path (2018). Still called from the old ERA-import and
+    # correction flows. Sets is_deleted = 1 like the modern path (ADR-002, T-103).
     conn = db.connect()
     try:
-        # pull the patient for the audit line
-        row = conn.execute(
-            "select p.name, p.mrn, c.patient_id "
-            "from claims c join patients p on p.patient_id = c.patient_id "
-            "where c.id = ?",
-            (claim_id,),
-        ).fetchone()
-        if row is not None:
-            pat_id = row["patient_id"]   # era-1 called it pat_id here
-            # old audit logging. writes the patient name and MRN into the log.
-            log.info("legacy void: claim=%s pat=%s patient=%s mrn=%s reason=%s",
-                     claim_id, pat_id, row["name"], row["mrn"], reason)
+        # no PHI in logs: claim id only, never patient name or MRN.
+        log.info("legacy void: claim=%s", claim_id)
+        conn.execute("update claims set is_deleted = 1 where id = ?", (claim_id,))
         conn.execute(
             "insert into void_log (claim_id, reason, method, voided_at) "
             "values (?, ?, 'legacy', ?)",
